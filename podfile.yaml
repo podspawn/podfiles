@@ -1,0 +1,10 @@
+# podfiles registry development environment
+# Run: podspawn dev
+extends: minimal
+
+on_create: |
+  curl -sSfL https://github.com/mikefarah/yq/releases/download/v4.44.1/yq_linux_amd64 -o /usr/local/bin/yq
+  chmod +x /usr/local/bin/yq
+
+on_start: |
+  echo "podfiles registry: $(ls templates/*.yaml bases/*.yaml | wc -l) files, yq $(yq --version | awk '{print $4}')"
