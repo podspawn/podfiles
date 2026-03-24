@@ -16,9 +16,6 @@ podspawn init
 
 # Use a specific template
 podspawn init --template go
-
-# Fetch the latest templates (updates from this repo)
-podspawn init --update
 ```
 
 ## Using bases with extends
@@ -27,7 +24,7 @@ In your project's `podfile.yaml`:
 
 ```yaml
 extends: ubuntu-dev
-packages: [go@1.24, make]
+packages: [go@1.24, delve]
 on_create: go mod download
 ```
 

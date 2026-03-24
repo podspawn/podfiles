@@ -13,28 +13,31 @@ jobs:
 
       - name: Install yq
         run: |
-          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.44.1/yq_linux_amd64
           sudo chmod +x /usr/local/bin/yq
 
       - name: Validate YAML syntax
         run: |
+          set -euo pipefail
+          shopt -s nullglob
           for f in templates/*.yaml bases/*.yaml registry.yaml; do
             yq '.' "$f" > /dev/null || { echo "FAIL: $f is not valid YAML"; exit 1; }
           done
 
       - name: Validate required fields
         run: |
+          set -euo pipefail
+          shopt -s nullglob
           for f in bases/*.yaml; do
-            base=$(yq '.base' "$f")
-            if [ "$base" = "null" ] || [ -z "$base" ]; then
+            if ! yq -e '.base' "$f" > /dev/null 2>&1; then
               echo "FAIL: $f missing required 'base' field"
               exit 1
             fi
           done
           for f in templates/*.yaml; do
-            base=$(yq '.base' "$f")
-            extends=$(yq '.extends' "$f")
-            if [ "$base" = "null" ] && [ "$extends" = "null" ]; then
+            has_base=$(yq -e '.base' "$f" > /dev/null 2>&1 && echo yes || echo no)
+            has_extends=$(yq -e '.extends' "$f" > /dev/null 2>&1 && echo yes || echo no)
+            if [ "$has_base" = "no" ] && [ "$has_extends" = "no" ]; then
               echo "FAIL: $f needs either 'base' or 'extends' field"
               exit 1
             fi
@@ -42,20 +45,41 @@ jobs:
 
       - name: Check registry sync
         run: |
+          set -euo pipefail
+          shopt -s nullglob
+          ok=true
+
+          # Every file must have a registry entry
           for f in templates/*.yaml; do
             name=$(basename "$f" .yaml)
-            count=$(yq ".templates[] | select(.name == \"$name\") | .name" registry.yaml | wc -l)
-            if [ "$count" -eq 0 ]; then
+            if ! yq -e ".templates[] | select(.name == \"$name\")" registry.yaml > /dev/null 2>&1; then
               echo "FAIL: $f not in registry.yaml templates"
-              exit 1
+              ok=false
             fi
           done
           for f in bases/*.yaml; do
             name=$(basename "$f" .yaml)
-            count=$(yq ".bases[] | select(.name == \"$name\") | .name" registry.yaml | wc -l)
-            if [ "$count" -eq 0 ]; then
+            if ! yq -e ".bases[] | select(.name == \"$name\")" registry.yaml > /dev/null 2>&1; then
               echo "FAIL: $f not in registry.yaml bases"
-              exit 1
+              ok=false
             fi
           done
+
+          # Every registry entry must point to a real file
+          for name in $(yq '.templates[].name' registry.yaml); do
+            if [ ! -f "templates/$name.yaml" ]; then
+              echo "FAIL: registry entry 'templates/$name' has no file"
+              ok=false
+            fi
+          done
+          for name in $(yq '.bases[].name' registry.yaml); do
+            if [ ! -f "bases/$name.yaml" ]; then
+              echo "FAIL: registry entry 'bases/$name' has no file"
+              ok=false
+            fi
+          done
+
+          if [ "$ok" = "false" ]; then
+            exit 1
+          fi
           echo "Registry sync OK"
