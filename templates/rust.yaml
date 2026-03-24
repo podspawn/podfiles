@@ -7,7 +7,7 @@
 extends: ubuntu-dev
 
 packages:
-  - rust
+  - rust@stable
 
 shell: /bin/bash
 
