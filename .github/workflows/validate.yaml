@@ -1,0 +1,61 @@
+name: Validate Podfiles
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Validate YAML syntax
+        run: |
+          for f in templates/*.yaml bases/*.yaml registry.yaml; do
+            yq '.' "$f" > /dev/null || { echo "FAIL: $f is not valid YAML"; exit 1; }
+          done
+
+      - name: Validate required fields
+        run: |
+          for f in bases/*.yaml; do
+            base=$(yq '.base' "$f")
+            if [ "$base" = "null" ] || [ -z "$base" ]; then
+              echo "FAIL: $f missing required 'base' field"
+              exit 1
+            fi
+          done
+          for f in templates/*.yaml; do
+            base=$(yq '.base' "$f")
+            extends=$(yq '.extends' "$f")
+            if [ "$base" = "null" ] && [ "$extends" = "null" ]; then
+              echo "FAIL: $f needs either 'base' or 'extends' field"
+              exit 1
+            fi
+          done
+
+      - name: Check registry sync
+        run: |
+          for f in templates/*.yaml; do
+            name=$(basename "$f" .yaml)
+            count=$(yq ".templates[] | select(.name == \"$name\") | .name" registry.yaml | wc -l)
+            if [ "$count" -eq 0 ]; then
+              echo "FAIL: $f not in registry.yaml templates"
+              exit 1
+            fi
+          done
+          for f in bases/*.yaml; do
+            name=$(basename "$f" .yaml)
+            count=$(yq ".bases[] | select(.name == \"$name\") | .name" registry.yaml | wc -l)
+            if [ "$count" -eq 0 ]; then
+              echo "FAIL: $f not in registry.yaml bases"
+              exit 1
+            fi
+          done
+          echo "Registry sync OK"
